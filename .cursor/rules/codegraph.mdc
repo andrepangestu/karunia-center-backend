@@ -1,0 +1,15 @@
+---
+description: Prefer CodeGraph over broad file search for codebase navigation
+alwaysApply: true
+---
+
+# CodeGraph
+
+This project uses **CodeGraph** (`@colbymchenry/codegraph`), not Graphify.
+
+- Index lives in `.codegraph/`
+- Prefer CodeGraph MCP tools (`codegraph_explore`, `codegraph_context`, callers/callees/impact) before broad Grep/Glob sweeps
+- After adding or renaming modules/entities, run `codegraph sync`
+- CLI equivalents: `codegraph query`, `codegraph explore`, `codegraph impact`, `codegraph status`
+
+Do not install or invoke Graphify in this repository.
