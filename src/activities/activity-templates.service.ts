@@ -72,6 +72,7 @@ export class ActivityTemplatesService {
     const qb = this.templatesRepository
       .createQueryBuilder('template')
       .leftJoin('template.activityType', 'activityType')
+      .addSelect(['activityType.sortOrder', 'activityType.code'])
       .orderBy('activityType.sortOrder', 'ASC')
       .addOrderBy('activityType.code', 'ASC')
       .addOrderBy('template.sortOrder', 'ASC')
