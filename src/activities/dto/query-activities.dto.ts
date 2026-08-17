@@ -1,14 +1,13 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsEnum, IsOptional, IsUUID, Matches } from 'class-validator';
+import { IsOptional, IsUUID, Matches } from 'class-validator';
 import { PaginationQueryDto } from '../../common/dto/pagination-query.dto';
-import { ActivityType } from '../../common/enums/activity-type.enum';
 import { DATE_PATTERN } from '../utils/time.util';
 
 export class QueryActivitiesDto extends PaginationQueryDto {
-  @ApiPropertyOptional({ enum: ActivityType, enumName: 'ActivityType' })
+  @ApiPropertyOptional({ format: 'uuid' })
   @IsOptional()
-  @IsEnum(ActivityType)
-  activityType?: ActivityType;
+  @IsUUID()
+  activityTypeId?: string;
 
   @ApiPropertyOptional({ example: '2026-08-17' })
   @IsOptional()

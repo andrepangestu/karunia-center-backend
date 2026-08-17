@@ -1,4 +1,4 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
   IsEnum,
@@ -23,6 +23,14 @@ export class ActivityItemDto {
   })
   @IsEnum(ActivityItemValue)
   value: ActivityItemValue;
+
+  @ApiPropertyOptional({
+    example: 'Masih perlu bantuan saat berwudhu',
+    nullable: true,
+  })
+  @IsOptional()
+  @IsString()
+  note?: string | null;
 
   @ApiProperty({ example: 0, required: false })
   @IsOptional()

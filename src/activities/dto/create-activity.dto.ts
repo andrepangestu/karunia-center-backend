@@ -1,27 +1,22 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
+  ArrayMinSize,
   IsArray,
-  IsEnum,
   IsOptional,
   IsString,
   IsUUID,
   Matches,
   ValidateNested,
 } from 'class-validator';
-import { ActivityType } from '../../common/enums/activity-type.enum';
-import { ActivityItemDto } from './activity-item.dto';
 import { ActivityMaterialDto } from './activity-material.dto';
 import { DATE_PATTERN } from '../utils/time.util';
+import { SubmitActivityItemDto } from './submit-activity-item.dto';
 
 export class CreateActivityDto {
-  @ApiProperty({
-    enum: ActivityType,
-    enumName: 'ActivityType',
-    example: ActivityType.PAGI,
-  })
-  @IsEnum(ActivityType)
-  activityType: ActivityType;
+  @ApiProperty({ format: 'uuid' })
+  @IsUUID()
+  activityTypeId: string;
 
   @ApiProperty({ example: '2026-08-17' })
   @Matches(DATE_PATTERN, { message: 'activityDate must be YYYY-MM-DD' })
@@ -40,14 +35,22 @@ export class CreateActivityDto {
   @IsString()
   description?: string;
 
-  @ApiPropertyOptional({ type: [ActivityItemDto], description: 'Kegiatan' })
-  @IsOptional()
+  @ApiProperty({
+    type: [SubmitActivityItemDto],
+    description:
+      'Required kegiatan scores. Use templateItemId for catalog items. All catalog kegiatan for this activity type must be scored.',
+  })
   @IsArray()
+  @ArrayMinSize(1, { message: 'Kegiatan scores are required' })
   @ValidateNested({ each: true })
-  @Type(() => ActivityItemDto)
-  items?: ActivityItemDto[];
+  @Type(() => SubmitActivityItemDto)
+  items: SubmitActivityItemDto[];
 
-  @ApiPropertyOptional({ type: [ActivityMaterialDto], description: 'Materi' })
+  @ApiPropertyOptional({
+    type: [ActivityMaterialDto],
+    description:
+      'Omitted = copy materi slots from the activity-templates catalog for this activity type.',
+  })
   @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })

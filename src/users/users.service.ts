@@ -18,6 +18,7 @@ import { UserRole } from '../common/enums/user-role.enum';
 import { CreateUserDto } from './dto/create-user.dto';
 import { QueryUsersDto } from './dto/query-users.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { CompanionLookupDto } from './dto/companion-lookup.dto';
 import { UserResponseDto } from './dto/user-response.dto';
 import { User } from './entities/user.entity';
 
@@ -152,6 +153,18 @@ export class UsersService implements OnModuleInit {
 
   async verifyPassword(user: User, password: string): Promise<boolean> {
     return bcrypt.compare(password, user.passwordHash);
+  }
+
+  async findCompanions(): Promise<CompanionLookupDto[]> {
+    const companions = await this.usersRepository.find({
+      where: { role: UserRole.PENDAMPING },
+      order: { name: 'ASC' },
+    });
+
+    return companions.map((user) => ({
+      id: user.id,
+      name: user.name,
+    }));
   }
 
   toResponse(user: User): UserResponseDto {

@@ -26,6 +26,9 @@ export class ActivityItem extends AbstractEntity {
   })
   value: ActivityItemValue;
 
+  @Column({ type: 'text', nullable: true })
+  note: string | null;
+
   @Column({ name: 'sort_order', type: 'int', default: 0 })
   sortOrder: number;
 }

@@ -1,9 +1,9 @@
 import { AbstractEntity } from '../../common/entities/abstract.entity';
-import { ActivityType } from '../../common/enums/activity-type.enum';
 import { User } from '../../users/entities/user.entity';
 import { Student } from '../../students/entities/student.entity';
 import { ActivityItem } from './activity-item.entity';
 import { ActivityMaterial } from './activity-material.entity';
+import { ActivityType } from './activity-type.entity';
 import { BehaviorReport } from '../../behavior-reports/entities/behavior-report.entity';
 import { Note } from '../../notes/entities/note.entity';
 import {
@@ -19,23 +19,24 @@ import type { Relation } from 'typeorm';
 
 @Entity({ name: 'activities' })
 @Index('IDX_activities_activity_date', ['activityDate'])
-@Index('IDX_activities_activity_type', ['activityType'])
+@Index('IDX_activities_activity_type_id', ['activityTypeId'])
 @Index('IDX_activities_student_id', ['studentId'])
 @Index('IDX_activities_companion_id', ['companionId'])
 @Index('IDX_activities_deleted_at', ['deletedAt'])
 @Index(
   'UQ_activities_student_date_type_active',
-  ['studentId', 'activityDate', 'activityType'],
+  ['studentId', 'activityDate', 'activityTypeId'],
   { unique: true, where: '"deleted_at" IS NULL' },
 )
 export class Activity extends AbstractEntity {
-  @Column({
-    name: 'activity_type',
-    type: 'enum',
-    enum: ActivityType,
-    enumName: 'activity_type',
+  @Column({ name: 'activity_type_id', type: 'uuid' })
+  activityTypeId: string;
+
+  @ManyToOne(() => ActivityType, (type) => type.activities, {
+    onDelete: 'RESTRICT',
   })
-  activityType: ActivityType;
+  @JoinColumn({ name: 'activity_type_id' })
+  activityType: Relation<ActivityType>;
 
   @Column({ name: 'activity_date', type: 'date' })
   activityDate: string;

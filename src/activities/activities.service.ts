@@ -10,12 +10,14 @@ import {
   PaginatedResult,
   buildPaginationMeta,
 } from '../common/dto/pagination-meta.dto';
-import { UserRole } from '../common/enums/user-role.enum';
 import { StudentsService } from '../students/students.service';
 import { User } from '../users/entities/user.entity';
 import { UsersService } from '../users/users.service';
+import { UserRole } from '../common/enums/user-role.enum';
 import { CreateActivityDto } from './dto/create-activity.dto';
 import { QueryActivitiesDto } from './dto/query-activities.dto';
+import { QueryStudentActivitiesDto } from './dto/query-student-activities.dto';
+import { StudentActivitiesResponseDto } from './dto/student-activities-response.dto';
 import { UpdateActivityDto } from './dto/update-activity.dto';
 import {
   ActivityItemResponseDto,
@@ -24,12 +26,25 @@ import {
 } from './dto/activity-response.dto';
 import { ActivityItemDto } from './dto/activity-item.dto';
 import { ActivityMaterialDto } from './dto/activity-material.dto';
+import { SubmitActivityItemDto } from './dto/submit-activity-item.dto';
 import { UpsertActivityItemDto } from './dto/upsert-activity-item.dto';
 import { UpsertActivityMaterialDto } from './dto/upsert-activity-material.dto';
 import { Activity } from './entities/activity.entity';
 import { ActivityItem } from './entities/activity-item.entity';
 import { ActivityMaterial } from './entities/activity-material.entity';
-import { formatTimeRange, normalizeTime, toSeconds } from './utils/time.util';
+import { ActivityTemplate } from './entities/activity-template.entity';
+import { ActivityTemplatesService } from './activity-templates.service';
+import { ActivityTypesService } from './activity-types.service';
+import {
+  buildActivityGate,
+  sortActivitiesByType,
+} from './utils/activity-gate.util';
+import {
+  formatTimeRange,
+  normalizeTime,
+  toSeconds,
+  todayDate,
+} from './utils/time.util';
 
 @Injectable()
 export class ActivitiesService {
@@ -39,12 +54,23 @@ export class ActivitiesService {
     private readonly activitiesRepository: Repository<Activity>,
     private readonly studentsService: StudentsService,
     private readonly usersService: UsersService,
+    private readonly activityTemplatesService: ActivityTemplatesService,
+    private readonly activityTypesService: ActivityTypesService,
   ) {}
 
   async create(dto: CreateActivityDto): Promise<ActivityResponseDto> {
     const student = await this.studentsService.getEntityById(dto.studentId);
     const companion = await this.getPendamping(dto.companionId);
-    this.assertMaterialTimes(dto.materials ?? []);
+    const activityType = await this.activityTypesService.getActiveEntityById(
+      dto.activityTypeId,
+    );
+    const templates =
+      await this.activityTemplatesService.findEntitiesByActivityTypeId(
+        activityType.id,
+      );
+    const materials = dto.materials ?? this.materialsFromTemplates(templates);
+    const items = this.resolveItems(dto.items, templates);
+    this.assertMaterialTimes(materials);
 
     const savedId = await this.runAtomic(async () =>
       this.dataSource.transaction(async (manager) => {
@@ -56,12 +82,12 @@ export class ActivitiesService {
           activityRepo,
           dto.studentId,
           dto.activityDate,
-          dto.activityType,
+          activityType.id,
         );
 
         const activity = await activityRepo.save(
           activityRepo.create({
-            activityType: dto.activityType,
+            activityTypeId: activityType.id,
             activityDate: dto.activityDate,
             companionId: companion.id,
             studentId: student.id,
@@ -69,12 +95,8 @@ export class ActivitiesService {
           }),
         );
 
-        await this.insertItems(itemRepo, activity.id, dto.items ?? []);
-        await this.insertMaterials(
-          materialRepo,
-          activity.id,
-          dto.materials ?? [],
-        );
+        await this.insertItems(itemRepo, activity.id, items);
+        await this.insertMaterials(materialRepo, activity.id, materials);
 
         return activity.id;
       }),
@@ -93,14 +115,15 @@ export class ActivitiesService {
       .createQueryBuilder('activity')
       .leftJoinAndSelect('activity.student', 'student')
       .leftJoinAndSelect('activity.companion', 'companion')
+      .leftJoinAndSelect('activity.activityType', 'activityType')
       .orderBy('activity.activityDate', 'DESC')
       .addOrderBy('activity.createdAt', 'DESC')
       .skip((page - 1) * limit)
       .take(limit);
 
-    if (query.activityType) {
-      qb.andWhere('activity.activityType = :activityType', {
-        activityType: query.activityType,
+    if (query.activityTypeId) {
+      qb.andWhere('activity.activityTypeId = :activityTypeId', {
+        activityTypeId: query.activityTypeId,
       });
     }
     if (query.date) {
@@ -136,6 +159,72 @@ export class ActivitiesService {
     };
   }
 
+  async findByStudent(
+    studentId: string,
+    query: QueryStudentActivitiesDto,
+  ): Promise<StudentActivitiesResponseDto> {
+    const student = await this.studentsService.getEntityById(studentId);
+    const { dateFrom, dateTo, fillEmptyDate } =
+      this.resolveStudentDateRange(query);
+    const requiredTypes = await this.activityTypesService.findActive();
+
+    const qb = this.activitiesRepository
+      .createQueryBuilder('activity')
+      .leftJoinAndSelect('activity.student', 'student')
+      .leftJoinAndSelect('activity.companion', 'companion')
+      .leftJoinAndSelect('activity.activityType', 'activityType')
+      .leftJoinAndSelect('activity.items', 'items')
+      .leftJoinAndSelect('activity.materials', 'materials')
+      .where('activity.studentId = :studentId', { studentId })
+      .orderBy('activity.activityDate', 'DESC')
+      .addOrderBy('activity.createdAt', 'ASC');
+
+    if (dateFrom) {
+      qb.andWhere('activity.activityDate >= :dateFrom', { dateFrom });
+    }
+    if (dateTo) {
+      qb.andWhere('activity.activityDate <= :dateTo', { dateTo });
+    }
+
+    const activities = await qb.getMany();
+    const byDate = new Map<string, Activity[]>();
+
+    for (const activity of activities) {
+      const date = this.toDateString(activity.activityDate);
+      const rows = byDate.get(date) ?? [];
+      rows.push(activity);
+      byDate.set(date, rows);
+    }
+
+    const dates = fillEmptyDate
+      ? [fillEmptyDate]
+      : [...byDate.keys()].sort((a, b) => b.localeCompare(a));
+
+    return {
+      student: {
+        id: student.id,
+        name: student.name,
+        nis: student.nis,
+        class: student.className,
+      },
+      days: dates.map((date) => {
+        const dayActivities = sortActivitiesByType(byDate.get(date) ?? []);
+        return {
+          date,
+          gate: buildActivityGate(
+            requiredTypes.map((type) =>
+              this.activityTypesService.toResponse(type),
+            ),
+            dayActivities.map((activity) => activity.activityTypeId),
+          ),
+          activities: dayActivities.map((activity) =>
+            this.toResponse(activity, true),
+          ),
+        };
+      }),
+    };
+  }
+
   async findById(id: string): Promise<ActivityResponseDto> {
     const activity = await this.getEntityById(id, true);
     return this.toResponse(activity, true);
@@ -153,6 +242,9 @@ export class ActivitiesService {
     if (dto.companionId) {
       await this.getPendamping(dto.companionId);
     }
+    if (dto.activityTypeId) {
+      await this.activityTypesService.getActiveEntityById(dto.activityTypeId);
+    }
     if (dto.materials) {
       this.assertMaterialTimes(dto.materials);
     }
@@ -168,8 +260,8 @@ export class ActivitiesService {
           throw new NotFoundException('Activity not found');
         }
 
-        if (dto.activityType !== undefined) {
-          activity.activityType = dto.activityType;
+        if (dto.activityTypeId !== undefined) {
+          activity.activityTypeId = dto.activityTypeId;
         }
         if (dto.activityDate !== undefined) {
           activity.activityDate = dto.activityDate;
@@ -188,7 +280,7 @@ export class ActivitiesService {
           activityRepo,
           activity.studentId,
           activity.activityDate,
-          activity.activityType,
+          activity.activityTypeId,
           activity.id,
         );
 
@@ -238,6 +330,7 @@ export class ActivitiesService {
       relations: {
         student: true,
         companion: true,
+        activityType: true,
         items: withBody,
         materials: withBody,
       },
@@ -246,6 +339,45 @@ export class ActivitiesService {
       throw new NotFoundException('Activity not found');
     }
     return activity;
+  }
+
+  private resolveStudentDateRange(query: QueryStudentActivitiesDto): {
+    dateFrom?: string;
+    dateTo?: string;
+    fillEmptyDate?: string;
+  } {
+    if (query.date) {
+      return {
+        dateFrom: query.date,
+        dateTo: query.date,
+        fillEmptyDate: query.date,
+      };
+    }
+
+    if (!query.dateFrom && !query.dateTo) {
+      const today = todayDate();
+      return { dateFrom: today, dateTo: today, fillEmptyDate: today };
+    }
+
+    if (query.dateFrom && query.dateTo && query.dateFrom > query.dateTo) {
+      throw new BadRequestException(
+        'dateFrom must be before or equal to dateTo',
+      );
+    }
+
+    return { dateFrom: query.dateFrom, dateTo: query.dateTo };
+  }
+
+  private toDateString(value: string | Date): string {
+    if (typeof value === 'string') {
+      return value.slice(0, 10);
+    }
+    return value.toISOString().slice(0, 10);
+  }
+
+  private normalizeNote(note?: string | null): string | null {
+    const trimmed = note?.trim();
+    return trimmed ? trimmed : null;
   }
 
   private async getPendamping(companionId: string): Promise<User> {
@@ -263,11 +395,11 @@ export class ActivitiesService {
     repo: Repository<Activity>,
     studentId: string,
     activityDate: string,
-    activityType: Activity['activityType'],
+    activityTypeId: string,
     excludeId?: string,
   ): Promise<void> {
     const existing = await repo.findOne({
-      where: { studentId, activityDate, activityType },
+      where: { studentId, activityDate, activityTypeId },
     });
     if (existing && existing.id !== excludeId) {
       throw new ConflictException(
@@ -276,13 +408,86 @@ export class ActivitiesService {
     }
   }
 
+  private materialsFromTemplates(
+    templates: ActivityTemplate[],
+  ): ActivityMaterialDto[] {
+    return templates.map((template, index) => ({
+      name: template.name,
+      startTime: template.startTime,
+      endTime: template.endTime,
+      sortOrder: template.sortOrder ?? index,
+    }));
+  }
+
+  private resolveItems(
+    items: SubmitActivityItemDto[],
+    templates: ActivityTemplate[],
+  ): ActivityItemDto[] {
+    if (!items.length) {
+      throw new BadRequestException('Kegiatan scores are required');
+    }
+
+    const catalogItems = new Map(
+      templates.flatMap((template) =>
+        [...(template.items ?? [])]
+          .sort((a, b) => a.sortOrder - b.sortOrder)
+          .map((item) => [item.id, item] as const),
+      ),
+    );
+    const scoredCatalogIds = new Set<string>();
+
+    const resolved = items.map((item, index) => {
+      if (!item.templateItemId) {
+        if (!item.name?.trim()) {
+          throw new BadRequestException(
+            'Item name is required when templateItemId is omitted',
+          );
+        }
+        return {
+          name: item.name,
+          value: item.value,
+          note: this.normalizeNote(item.note),
+          sortOrder: item.sortOrder ?? index,
+        };
+      }
+
+      if (scoredCatalogIds.has(item.templateItemId)) {
+        throw new BadRequestException('Duplicate templateItemId');
+      }
+
+      const catalogItem = catalogItems.get(item.templateItemId);
+      if (!catalogItem) {
+        throw new BadRequestException(
+          'Activity template item does not belong to this activity type',
+        );
+      }
+
+      scoredCatalogIds.add(item.templateItemId);
+
+      return {
+        name: catalogItem.name,
+        value: item.value,
+        note: this.normalizeNote(item.note),
+        sortOrder: item.sortOrder ?? catalogItem.sortOrder ?? index,
+      };
+    });
+
+    if (catalogItems.size > 0 && scoredCatalogIds.size !== catalogItems.size) {
+      throw new BadRequestException(
+        'All catalog kegiatan must be scored for this activity type',
+      );
+    }
+
+    return resolved;
+  }
+
   private assertMaterialTimes(
     materials: Array<{ startTime: string; endTime: string }>,
   ): void {
     for (const material of materials) {
-      if (toSeconds(material.endTime) <= toSeconds(material.startTime)) {
+      if (toSeconds(material.endTime) === toSeconds(material.startTime)) {
         throw new BadRequestException(
-          'Material end time must be after start time',
+          'Material start and end time must be different',
         );
       }
     }
@@ -302,6 +507,7 @@ export class ActivitiesService {
           activityId,
           name: item.name.trim(),
           value: item.value,
+          note: this.normalizeNote(item.note),
           sortOrder: item.sortOrder ?? index,
         }),
       ),
@@ -360,6 +566,7 @@ export class ActivitiesService {
         }
         current.name = item.name.trim();
         current.value = item.value;
+        current.note = this.normalizeNote(item.note);
         current.sortOrder = item.sortOrder ?? index;
         await repo.save(current);
       } else {
@@ -368,6 +575,7 @@ export class ActivitiesService {
             activityId,
             name: item.name.trim(),
             value: item.value,
+            note: this.normalizeNote(item.note),
             sortOrder: item.sortOrder ?? index,
           }),
         );
@@ -431,7 +639,7 @@ export class ActivitiesService {
   ): ActivityResponseDto {
     const response: ActivityResponseDto = {
       id: activity.id,
-      activityType: activity.activityType,
+      activityType: this.activityTypesService.toResponse(activity.activityType),
       activityDate: activity.activityDate,
       companion: {
         id: activity.companion.id,
@@ -456,6 +664,7 @@ export class ActivitiesService {
           id: item.id,
           name: item.name,
           value: item.value,
+          note: item.note ?? null,
           sortOrder: item.sortOrder,
         }));
       response.materials = [...(activity.materials ?? [])]
@@ -491,7 +700,7 @@ export class ActivitiesService {
       }
       if (driverError?.code === '23514') {
         throw new BadRequestException(
-          'Material end time must be after start time',
+          'Material start and end time must be different',
         );
       }
     }

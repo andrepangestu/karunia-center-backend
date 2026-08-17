@@ -1,7 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { UserRole } from '../../common/enums/user-role.enum';
-import { ActivityType } from '../../common/enums/activity-type.enum';
 import { ActivityItemValue } from '../../common/enums/activity-item-value.enum';
+import { ActivityTypeResponseDto } from './activity-type-response.dto';
 
 export class ActivityCompanionDto {
   @ApiProperty({ format: 'uuid' })
@@ -38,6 +38,9 @@ export class ActivityItemResponseDto {
   @ApiProperty({ enum: ActivityItemValue, enumName: 'ActivityItemValue' })
   value: ActivityItemValue;
 
+  @ApiPropertyOptional({ nullable: true })
+  note: string | null;
+
   @ApiProperty()
   sortOrder: number;
 }
@@ -66,8 +69,8 @@ export class ActivityResponseDto {
   @ApiProperty({ format: 'uuid' })
   id: string;
 
-  @ApiProperty({ enum: ActivityType, enumName: 'ActivityType' })
-  activityType: ActivityType;
+  @ApiProperty({ type: ActivityTypeResponseDto })
+  activityType: ActivityTypeResponseDto;
 
   @ApiProperty({ example: '2026-08-17' })
   activityDate: string;

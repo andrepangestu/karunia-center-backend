@@ -13,6 +13,7 @@ describe('ActivitiesController', () => {
           provide: ActivitiesService,
           useValue: {
             findAll: jest.fn(),
+            findByStudent: jest.fn(),
             findById: jest.fn(),
             create: jest.fn(),
             update: jest.fn(),

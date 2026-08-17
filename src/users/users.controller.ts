@@ -21,6 +21,7 @@ import {
 import { SWAGGER_ACCESS_TOKEN } from '../common/constants/auth.constants';
 import { Roles } from '../common/decorators/roles.decorator';
 import { UserRole } from '../common/enums/user-role.enum';
+import { CompanionLookupDto } from './dto/companion-lookup.dto';
 import { CreateUserDto } from './dto/create-user.dto';
 import { QueryUsersDto } from './dto/query-users.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -41,6 +42,14 @@ export class UsersController {
   @ApiResponse({ status: 403, description: 'Forbidden' })
   findAll(@Query() query: QueryUsersDto) {
     return this.usersService.findAll(query);
+  }
+
+  @Get('companions')
+  @Roles(UserRole.ADMIN, UserRole.PENDAMPING)
+  @ApiOperation({ summary: 'List pendamping for form dropdowns' })
+  @ApiResponse({ status: 200, type: [CompanionLookupDto] })
+  findCompanions() {
+    return this.usersService.findCompanions();
   }
 
   @Get(':id')

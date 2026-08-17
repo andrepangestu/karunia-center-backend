@@ -25,6 +25,8 @@ import { ActivitiesService } from './activities.service';
 import { ActivityResponseDto } from './dto/activity-response.dto';
 import { CreateActivityDto } from './dto/create-activity.dto';
 import { QueryActivitiesDto } from './dto/query-activities.dto';
+import { QueryStudentActivitiesDto } from './dto/query-student-activities.dto';
+import { StudentActivitiesResponseDto } from './dto/student-activities-response.dto';
 import { UpdateActivityDto } from './dto/update-activity.dto';
 
 @ApiTags('Activities')
@@ -41,6 +43,20 @@ export class ActivitiesController {
     return this.activitiesService.findAll(query);
   }
 
+  @Get('students/:studentId')
+  @ApiOperation({
+    summary: 'Get a student activity log with the daily activity-type gate',
+  })
+  @ApiParam({ name: 'studentId', format: 'uuid' })
+  @ApiResponse({ status: 200, type: StudentActivitiesResponseDto })
+  @ApiResponse({ status: 404, description: 'Student not found' })
+  findByStudent(
+    @Param('studentId', ParseUUIDPipe) studentId: string,
+    @Query() query: QueryStudentActivitiesDto,
+  ) {
+    return this.activitiesService.findByStudent(studentId, query);
+  }
+
   @Get(':id')
   @ApiOperation({
     summary: 'Get activity detail including kegiatan and materi',
@@ -53,9 +69,15 @@ export class ActivitiesController {
   }
 
   @Post()
-  @ApiOperation({ summary: 'Create daily activity' })
+  @ApiOperation({
+    summary:
+      'Create daily activity. Materi is copied from the catalog when omitted; kegiatan scores use templateItemId.',
+  })
   @ApiResponse({ status: 201, type: ActivityResponseDto })
-  @ApiResponse({ status: 400, description: 'Invalid companion or time range' })
+  @ApiResponse({
+    status: 400,
+    description: 'Missing kegiatan scores, invalid companion, catalog item, or time range',
+  })
   @ApiResponse({ status: 409, description: 'Duplicate activity slot' })
   create(@Body() dto: CreateActivityDto) {
     return this.activitiesService.create(dto);

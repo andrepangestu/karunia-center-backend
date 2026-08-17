@@ -1,24 +1,23 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
+  ArrayMinSize,
   IsArray,
-  IsEnum,
   IsOptional,
   IsString,
   IsUUID,
   Matches,
   ValidateNested,
 } from 'class-validator';
-import { ActivityType } from '../../common/enums/activity-type.enum';
 import { DATE_PATTERN } from '../utils/time.util';
 import { UpsertActivityItemDto } from './upsert-activity-item.dto';
 import { UpsertActivityMaterialDto } from './upsert-activity-material.dto';
 
 export class UpdateActivityDto {
-  @ApiPropertyOptional({ enum: ActivityType, enumName: 'ActivityType' })
+  @ApiPropertyOptional({ format: 'uuid' })
   @IsOptional()
-  @IsEnum(ActivityType)
-  activityType?: ActivityType;
+  @IsUUID()
+  activityTypeId?: string;
 
   @ApiPropertyOptional({ example: '2026-08-17' })
   @IsOptional()
@@ -43,10 +42,11 @@ export class UpdateActivityDto {
   @ApiPropertyOptional({
     type: [UpsertActivityItemDto],
     description:
-      'Replace-set kegiatan. Omitted = keep existing. [] = remove all.',
+      'Replace-set kegiatan. Omitted = keep existing. Empty array is not allowed.',
   })
   @IsOptional()
   @IsArray()
+  @ArrayMinSize(1, { message: 'Kegiatan scores are required' })
   @ValidateNested({ each: true })
   @Type(() => UpsertActivityItemDto)
   items?: UpsertActivityItemDto[];
