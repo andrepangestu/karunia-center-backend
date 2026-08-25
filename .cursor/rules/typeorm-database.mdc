@@ -1,0 +1,27 @@
+---
+description: TypeORM, PostgreSQL, and migration conventions
+globs: "**/{entities,migrations,database,config}/**/*.ts"
+alwaysApply: false
+---
+
+# TypeORM & PostgreSQL
+
+- `synchronize` is always `false`. Schema changes go through migrations
+- UUID primary keys. Timestamps as `timestamptz`
+- Soft delete only on `Activity` (`DeleteDateColumn`). Users and students use hard delete + `ON DELETE RESTRICT`
+- Unique activity: `(student_id, activity_date, activity_type)` WHERE `deleted_at IS NULL`
+- Child rows (`activity_items`, `activity_materials`): `ON DELETE CASCADE`
+- Behavior reports and notes: `ON DELETE RESTRICT` (independent documents)
+- Companion FK must be a `User` with role `PENDAMPING` (enforced in service layer)
+- Multi-table writes (create/update activity + children) must use a transaction
+- Name indexes/FKs explicitly (`IDX_`, `UQ_`, `FK_`, `CHK_`)
+- Login identifier is `email` (unique, stored lowercase), not username
+
+```typescript
+// BAD
+synchronize: true
+
+// GOOD
+synchronize: false
+migrations: ['dist/database/migrations/*.js']
+```

@@ -1,0 +1,29 @@
+---
+description: NestJS backend architecture, naming, and API conventions
+alwaysApply: true
+---
+
+# NestJS Backend Standards
+
+Follow official NestJS modular architecture. One domain per module (`users`, `students`, `activities`).
+
+- Files: `kebab-case` (`activity-item.entity.ts`)
+- Classes: `PascalCase`. Methods/properties: `camelCase`
+- DB tables/columns: `snake_case`. Entity properties stay camelCase via `@Column({ name })`
+- Never return TypeORM entities from controllers. Map to response DTOs
+- Validate with `class-validator` / `class-transformer` on DTOs only, not entities
+- Global prefix is `api/v1`. Do not remove it
+- Passwords: hash on write, `select: false`, never in responses or Swagger output
+- Secrets come from env (`JWT_SECRET`, DB credentials). Never hardcode
+- Prefer existing modules/entities. Do not duplicate domain models
+- Use CodeGraph MCP (`codegraph_*` tools / CLI) before broad file searches. After schema or module changes, run `codegraph sync`
+
+```typescript
+// BAD
+@Post() create(@Body() student: Student) { return this.repo.save(student); }
+
+// GOOD
+@Post() create(@Body() dto: CreateStudentDto): Promise<StudentResponseDto> {
+  return this.studentsService.create(dto);
+}
+```
